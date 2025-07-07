@@ -137,3 +137,5 @@ func ScanPortsRanging(host string, ranging string, withBanner bool) {
 		fmt.Println("No Ports Open")
 	}
 }
+
+
