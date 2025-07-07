@@ -3,15 +3,38 @@ package scanner
 import (
 	"fmt"
 	"net"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 
+func ScanAndGrabBanner(host string, port int) {
+	timeout := time.Millisecond * 900
+	address := fmt.Sprintf("%s:%d", host, port)
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(1 * time.Second))
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		fmt.Printf("Port %d open - Banner: (no banner)\n", port)
+		return
+	}
+
+	fmt.Printf("Port %d open - Banner: %s\n", port, string(buf[:n]))
+}
+
+
 func ScanPort(host string, port int) bool {
+	timeout := time.Millisecond * 900
 	address := fmt.Sprintf("%s:%d",host,port)
-	conn, err := net.Dial("tcp", address)
+	conn, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return false
 	}
@@ -19,32 +42,47 @@ func ScanPort(host string, port int) bool {
 	return true	
 }
 
+func ScanPorts(host string, ports []int, withBanner bool) {
+	var wg sync.WaitGroup
+	results := make(chan int, len(ports))
 
-func ScanPorts(host string,ports []int){
-	results := make(chan int)
-
-	for _ ,port := range ports {
-		go func(p int){
-			if ScanPort(host,p){
+	for _, port := range ports {
+		wg.Add(1)
+		go func(p int) {
+			defer wg.Done()
+			if withBanner {
+				ScanAndGrabBanner(host, p)
 				results <- p
 			} else {
-				results <- -1
+				if ScanPort(host, p) {
+					fmt.Printf("Port :%d is open\n", p)
+					results <- p
+				} else {
+					results <- -1
+				}
 			}
 		}(port)
 	}
 
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	openFound := false
 	for range ports {
-		p :=  <-results
+		p := <-results
 		if p != -1 {
-			fmt.Printf("Port :%d is open\n", p)
+			openFound = true
 		}
 	}
-	fmt.Printf("No Ports Open")
-
+	if !openFound {
+		fmt.Println("No Ports Found Open")
+	}
 }
 
 
-func ScanPortsRanging(host string, ranging string) {
+func ScanPortsRanging(host string, ranging string, withBanner bool) {
 	ports := strings.Split(ranging, "-")
 	if len(ports) != 2 {
 		fmt.Println("Invalid range format. Use start-end.")
@@ -60,25 +98,30 @@ func ScanPortsRanging(host string, ranging string) {
 
 	var wg sync.WaitGroup
 	results := make(chan int, endPort-startPort+1)
-	sem := make(chan struct{}, 100) // semaphore for max 100 concurrent goroutines
+	sem := make(chan struct{}, 100)
 
 	for port := startPort; port <= endPort; port++ {
 		wg.Add(1)
-		sem <- struct{}{} // acquire slot
+		sem <- struct{}{}
 
 		go func(p int) {
 			defer wg.Done()
-			defer func() { <-sem }() // release slot
+			defer func() { <-sem }()
 
-			if ScanPort(host, p) {
+			if withBanner {
+				ScanAndGrabBanner(host, p)
 				results <- p
 			} else {
-				results <- -1
+				if ScanPort(host, p) {
+					fmt.Printf("Port :%d is open\n", p)
+					results <- p
+				} else {
+					results <- -1
+				}
 			}
 		}(port)
 	}
 
-	// Close results channel after all workers are done
 	go func() {
 		wg.Wait()
 		close(results)
@@ -87,11 +130,9 @@ func ScanPortsRanging(host string, ranging string) {
 	openFound := false
 	for p := range results {
 		if p != -1 {
-			fmt.Printf("Port :%d is open\n", p)
 			openFound = true
 		}
 	}
-
 	if !openFound {
 		fmt.Println("No Ports Open")
 	}
