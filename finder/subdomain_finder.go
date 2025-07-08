@@ -2,10 +2,13 @@ package finder
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
 func DiscoverSubdomains(baseDomain string, wordlistpath string){
@@ -29,11 +32,28 @@ func DiscoverSubdomains(baseDomain string, wordlistpath string){
 		return
 	}
 
+	conc := 100
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, conc)
 	for _, domain := range wordlist {
-		subdomain := fmt.Sprintf("%s.%s", domain, baseDomain )
-		ips, err := net.LookupHost(subdomain)
-		if err == nil {
-			fmt.Printf("Found: %s → %v\n", subdomain , ips)
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(d string){
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer func(){
+				wg.Done()
+				<- sem
+				cancel()
+			}()
+			subdomain := fmt.Sprintf("%s.%s", d, baseDomain )
+			ips, err := net.DefaultResolver.LookupHost(ctx, subdomain)
+			if err == nil {
+				fmt.Printf("Found: %s → %v\n", subdomain, ips)
+			} else if ctx.Err() == context.DeadlineExceeded {
+				fmt.Printf("Timeout: %s\n", subdomain)
+			}
+			
+		}(domain)	
 	}
+	wg.Wait()
 }
