@@ -1,4 +1,4 @@
-BINARY_NAME = recongo
+BINARY_NAME = ReconGo
 BUILD_DIR = builds
 
 .PHONY: all build clean run install
