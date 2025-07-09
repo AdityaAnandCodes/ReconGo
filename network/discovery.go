@@ -1,17 +1,21 @@
 package network
 
-import(
+import (
 	"net"
-	"fmt"
 )
 
-func GetLocalIps() ([]string, error){
+type IPInfo struct {
+	InterfaceName string
+	IPAddress     string
+	ReverseDNS    string
+}
 
-	var ips []string
-	
-	ifaces,err := net.Interfaces()
+func GetLocalIps(withReverseDNS bool) ([]IPInfo, error) {
+	var results []IPInfo
+
+	ifaces, err := net.Interfaces()
 	if err != nil {
-		return ips,err
+		return nil, err
 	}
 
 	for _, iface := range ifaces {
@@ -30,20 +34,29 @@ func GetLocalIps() ([]string, error){
 				continue
 			}
 
-			ipv4 := ipnet.IP.To4()
-			if ipv4 == nil {
+			ip := ipnet.IP.To4()
+			if ip == nil {
 				continue
 			}
 
-			ips = append(ips, ipv4.String())
+			ipStr := ip.String()
+			ipInfo := IPInfo{
+				InterfaceName: iface.Name,
+				IPAddress:     ipStr,
+			}
+
+			if withReverseDNS {
+				names, err := net.LookupAddr(ipStr)
+				if err == nil && len(names) > 0 {
+					ipInfo.ReverseDNS = names[0]
+				} else {
+					ipInfo.ReverseDNS = "N/A"
+				}
+			}
+
+			results = append(results, ipInfo)
 		}
 	}
 
-	for _, ip := range ips{
-		names, _ := net.LookupAddr(ip)
-		fmt.Printf("Reverse DNS: %s\n", names)
-	}
-
-	return ips, nil
-
+	return results, nil
 }

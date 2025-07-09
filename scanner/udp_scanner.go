@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"strings"
 )
 
 func ScanUDPPort(host string, port int) bool {
@@ -28,38 +29,43 @@ func ScanUDPPort(host string, port int) bool {
 	return err == nil
 }
 
-
-func ScanUdpPorts(host string, ports []int){
+func ScanUdpPorts(host string, ports []int) {
 	var wg sync.WaitGroup
 	results := make(chan int, len(ports))
 
+	fmt.Printf("\n[~] Scanning UDP ports on %s...\n", host)
+	fmt.Printf("%-6s %-6s %-6s\n", "Proto", "Port", "State")
+	fmt.Println(strings.Repeat("-", 30))
+
 	for _, port := range ports {
 		wg.Add(1)
-		go func(p int){
+		go func(p int) {
 			defer wg.Done()
-			if ScanUDPPort(host,p){
+			if ScanUDPPort(host, p) {
 				results <- p
 			} else {
 				results <- -1
 			}
 		}(port)
-		}
+	}
 
-	go func(){
+	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	openFound :=  false
-	for range ports {
-		p := <- results
-		if p != -1 {
-			openFound = true
-			fmt.Printf("UDP Port: %d Found Open\n",p)
-		}
+	openPorts := []int{}
+for range ports {
+	p := <-results
+	if p != -1 {
+		openPorts = append(openPorts, p)
+		fmt.Printf("[+] %-6s %-6d %-6s\n", "UDP", p, "OPEN")
 	}
+}
+if len(openPorts) == 0 {
+	fmt.Println("[!] No open UDP ports found.")
+} else {
+	fmt.Printf("[✓] %d UDP port(s) open.\n", len(openPorts))
+}
 
-	if !openFound {
-		fmt.Print("No Open Ports Were Found\n")
-	}
 }
